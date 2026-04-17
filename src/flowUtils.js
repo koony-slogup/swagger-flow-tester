@@ -1,0 +1,64 @@
+/**
+ * Resolve a template string that may contain {step1.fieldName} expressions.
+ * e.g. "Bearer {step1.accessToken}" → "Bearer eyJ..."
+ */
+export function resolveTemplate(str, resolveBinding) {
+  if (!str || !str.includes('{')) return str
+  return str.replace(/\{(step\d+\.[^}]+)\}/g, (_, expr) => {
+    const resolved = resolveBinding(expr)
+    return resolved !== undefined && resolved !== null ? String(resolved) : ''
+  })
+}
+
+/**
+ * Compute execution order from flowSteps + connections.
+ * If no connections: returns steps in Y-sorted order (top → bottom).
+ * If connections exist: follows the connection chain, then appends isolated nodes.
+ */
+export function computeExecutionOrder(steps, connections) {
+  if (!connections || connections.length === 0) return [...steps]
+
+  const nextMap = {}          // fromId → toId
+  const hasIncoming = new Set() // ids that have an incoming connection
+
+  for (const c of connections) {
+    nextMap[c.fromId] = c.toId
+    hasIncoming.add(c.toId)
+  }
+
+  const connectedIds = new Set(connections.flatMap(c => [c.fromId, c.toId]))
+
+  // Chain heads: part of a connection but have no incoming edge
+  const heads = steps
+    .filter(s => connectedIds.has(s.id) && !hasIncoming.has(s.id))
+    .sort((a, b) => (a.y || 0) - (b.y || 0))
+
+  // Isolated: not in any connection
+  const isolated = steps
+    .filter(s => !connectedIds.has(s.id))
+    .sort((a, b) => (a.y || 0) - (b.y || 0))
+
+  const chain = []
+  const visited = new Set()
+
+  for (const head of heads) {
+    let cur = head
+    while (cur && !visited.has(cur.id)) {
+      visited.add(cur.id)
+      chain.push(cur)
+      const nextId = nextMap[cur.id]
+      cur = nextId ? steps.find(s => s.id === nextId) : null
+    }
+  }
+
+  if (isolated.length === 0) return chain
+
+  // Merge isolated nodes into the chain by Y position (not just appended at end)
+  const result = [...chain]
+  for (const iso of isolated.sort((a, b) => (a.y || 0) - (b.y || 0))) {
+    const insertIdx = result.findIndex(s => (s.y || 0) > (iso.y || 0))
+    if (insertIdx === -1) result.push(iso)
+    else result.splice(insertIdx, 0, iso)
+  }
+  return result
+}
