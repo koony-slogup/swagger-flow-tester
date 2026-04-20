@@ -17,13 +17,18 @@ export function MethodBadge({ method }) {
   return <span className={[styles.method, styles[`method_${method}`]].join(' ')}>{method}</span>
 }
 
-export function Modal({ open, onClose, title, children }) {
+export function Modal({ open, onClose, title, children, maxWidth }) {
   if (!open) return null
   return (
     <div className={styles.overlay} onClick={onClose}>
-      <div className={styles.modal} onClick={e => e.stopPropagation()}>
-        <div className={styles.modal_title}>{title}</div>
-        {children}
+      <div className={styles.modal} style={maxWidth ? { maxWidth } : {}} onClick={e => e.stopPropagation()}>
+        <div className={styles.modal_head}>
+          <div className={styles.modal_title}>{title}</div>
+          <button className={styles.modal_close} onClick={onClose}>x</button>
+        </div>
+        <div className={styles.modal_body}>
+          {children}
+        </div>
       </div>
     </div>
   )
@@ -34,8 +39,13 @@ export function BottomSheet({ open, onClose, title, children }) {
   return (
     <div className={styles.overlay} onClick={onClose}>
       <div className={styles.sheet} onClick={e => e.stopPropagation()}>
-        <div className={styles.modal_title}>{title}</div>
-        {children}
+        <div className={styles.modal_head}>
+          <div className={styles.modal_title}>{title}</div>
+          <button className={styles.modal_close} onClick={onClose}>x</button>
+        </div>
+        <div className={styles.modal_body}>
+          {children}
+        </div>
       </div>
     </div>
   )

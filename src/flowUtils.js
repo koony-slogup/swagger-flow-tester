@@ -28,15 +28,28 @@ export function computeExecutionOrder(steps, connections) {
 
   const connectedIds = new Set(connections.flatMap(c => [c.fromId, c.toId]))
 
+  const stepSort = (a, b) => {
+    // 1. Primary: Y coordinate (with 20px threshold to treat nodes on same level similarly)
+    const ay = a.y || 0, by = b.y || 0
+    if (Math.abs(ay - by) > 20) return ay - by
+    
+    // 2. Secondary: Creation order (dragged from library order)
+    const ac = a.createdAt || 0, bc = b.createdAt || 0
+    if (ac !== bc) return ac - bc
+    
+    // 3. Tertiary: X coordinate
+    return (a.x || 0) - (b.x || 0)
+  }
+
   // Chain heads: part of a connection but have no incoming edge
   const heads = steps
     .filter(s => connectedIds.has(s.id) && !hasIncoming.has(s.id))
-    .sort((a, b) => (a.y || 0) - (b.y || 0))
+    .sort(stepSort)
 
   // Isolated: not in any connection
   const isolated = steps
     .filter(s => !connectedIds.has(s.id))
-    .sort((a, b) => (a.y || 0) - (b.y || 0))
+    .sort(stepSort)
 
   const chain = []
   const visited = new Set()
@@ -53,10 +66,10 @@ export function computeExecutionOrder(steps, connections) {
 
   if (isolated.length === 0) return chain
 
-  // Merge isolated nodes into the chain by Y position (not just appended at end)
+  // Merge isolated nodes into the chain by weight (spatial + time)
   const result = [...chain]
-  for (const iso of isolated.sort((a, b) => (a.y || 0) - (b.y || 0))) {
-    const insertIdx = result.findIndex(s => (s.y || 0) > (iso.y || 0))
+  for (const iso of isolated.sort(stepSort)) {
+    const insertIdx = result.findIndex(s => stepSort(iso, s) < 0)
     if (insertIdx === -1) result.push(iso)
     else result.splice(insertIdx, 0, iso)
   }

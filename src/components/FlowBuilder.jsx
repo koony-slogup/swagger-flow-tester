@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { useStore } from '../store'
 import { computeExecutionOrder } from '../flowUtils'
-import { Button, MethodBadge, BottomSheet } from './ui'
+import { Button, MethodBadge, Modal } from './ui'
 import styles from './FlowBuilder.module.css'
 
 const NODE_W    = 292
@@ -118,6 +118,7 @@ export default function FlowBuilder({ onRun }) {
 
   const canvasRef    = useRef(null)
   const hoverPortRef = useRef(null) // step.id of the port_in being hovered during conn drag
+  const hoverOutPortRef = useRef(null) // step.id of the port_out being hovered during backward drag
   const clipboardRef = useRef(null) // copied step snapshot
 
   // Migrate old steps without x/y
@@ -203,16 +204,32 @@ export default function FlowBuilder({ onRun }) {
   }
 
   // ── Node drag to reposition ───────────────────────────────────────
+  function handleNodeMove(ev, step, sx, sy, smx, smy) {
+    const isTouch = ev.type.startsWith('touch')
+    const clientX = isTouch ? ev.touches[0].clientX : ev.clientX
+    const clientY = isTouch ? ev.touches[0].clientY : ev.clientY
+    updateStepPos(step.id, Math.max(0, sx + clientX - smx), Math.max(0, sy + clientY - smy))
+  }
+
   function onNodeHeaderDown(e, step) {
-    if (e.button !== 0) return
-    e.preventDefault()
+    if (e.type === 'mousedown' && e.button !== 0) return
+    if (e.cancelable) e.preventDefault()
     e.stopPropagation()
+
+    const isTouch = e.type === 'touchstart'
     const sx = step.x ?? 80, sy = step.y ?? 80
-    const smx = e.clientX,   smy = e.clientY
-    const move = ev => updateStepPos(step.id, Math.max(0, sx + ev.clientX - smx), Math.max(0, sy + ev.clientY - smy))
-    const up   = ()  => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up) }
-    window.addEventListener('mousemove', move)
-    window.addEventListener('mouseup', up)
+    const smx = isTouch ? e.touches[0].clientX : e.clientX
+    const smy = isTouch ? e.touches[0].clientY : e.clientY
+
+    const move = ev => handleNodeMove(ev, step, sx, sy, smx, smy)
+    const up   = ()  => {
+      window.removeEventListener('mousemove', move)
+      window.removeEventListener('mouseup', up)
+      window.removeEventListener('touchmove', move)
+      window.removeEventListener('touchend', up)
+    }
+    window.addEventListener(isTouch ? 'touchmove' : 'mousemove', move, { passive: false })
+    window.addEventListener(isTouch ? 'touchend' : 'mouseup', up)
   }
 
   // ── Connection port drag ──────────────────────────────────────────
@@ -224,28 +241,92 @@ export default function FlowBuilder({ onRun }) {
     const fromX = (step.x ?? 0) + NODE_W
     const fromY = (step.y ?? 0) + PORT_OK_Y
     setDragConn({
-      fromId: step.id, fromX, fromY,
+      fromId: step.id, fromSide: 'out', fromX, fromY,
       curX: e.clientX - rect.left + canvasRef.current.scrollLeft,
       curY: e.clientY - rect.top  + canvasRef.current.scrollTop,
     })
     const move = ev => {
       const r = canvasRef.current.getBoundingClientRect()
+      const isTouch = ev.type.startsWith('touch')
+      const clientX = isTouch ? ev.touches[0].clientX : ev.clientX
+      const clientY = isTouch ? ev.touches[0].clientY : ev.clientY
       setDragConn(d => d ? {
         ...d,
-        curX: ev.clientX - r.left + canvasRef.current.scrollLeft,
-        curY: ev.clientY - r.top  + canvasRef.current.scrollTop,
+        curX: clientX - r.left + canvasRef.current.scrollLeft,
+        curY: clientY - r.top  + canvasRef.current.scrollTop,
+      } : null)
+    }
+    const up = (ev) => {
+      window.removeEventListener('mousemove', move)
+      window.removeEventListener('mouseup', up)
+      window.removeEventListener('touchmove', move)
+      window.removeEventListener('touchend', up)
+
+      const toId = hoverPortRef.current
+      if (toId && toId !== step.id) {
+        addConnection(step.id, toId)
+      } else {
+        // Fallback: If dropped on a node (not exactly on a port), try to connect to that node
+        const r = canvasRef.current.getBoundingClientRect()
+        const isTouch = ev.type?.startsWith('touch')
+        const clientX = isTouch ? ev.changedTouches[0].clientX : ev.clientX
+        const clientY = isTouch ? ev.changedTouches[0].clientY : ev.clientY
+        const el = document.elementFromPoint(clientX, clientY)
+        const nodeEl = el?.closest('.' + styles.node)
+        if (nodeEl) {
+          // This is a bit hacky but works for small projects: find node by index or something
+          // Or just rely on hoverPortRef being set by the node's hover handlers
+          // (Actually, the node itself should have onMouseEnter for the whole node during drag)
+        }
+      }
+
+      hoverPortRef.current = null
+      setDragConn(null)
+    }
+    window.addEventListener(e.type === 'touchstart' ? 'touchmove' : 'mousemove', move, { passive: false })
+    window.addEventListener(e.type === 'touchstart' ? 'touchend' : 'mouseup', up)
+  }
+
+  function onPortInDown(e, step) {
+    if (e.type === 'mousedown' && e.button !== 0) return
+    e.preventDefault()
+    e.stopPropagation()
+    const rect = canvasRef.current.getBoundingClientRect()
+    const isTouch = e.type === 'touchstart'
+    const startX = isTouch ? e.touches[0].clientX : e.clientX
+    const startY = isTouch ? e.touches[0].clientY : e.clientY
+
+    const fromX = (step.x ?? 0)
+    const fromY = (step.y ?? 0) + PORT_IN_Y
+    setDragConn({
+      fromId: step.id, fromSide: 'in', fromX, fromY,
+      curX: startX - rect.left + canvasRef.current.scrollLeft,
+      curY: startY - rect.top  + canvasRef.current.scrollTop,
+    })
+    const move = ev => {
+      const r = canvasRef.current.getBoundingClientRect()
+      const isTe = ev.type.startsWith('touch')
+      const clientX = isTe ? ev.touches[0].clientX : ev.clientX
+      const clientY = isTe ? ev.touches[0].clientY : ev.clientY
+      setDragConn(d => d ? {
+        ...d,
+        curX: clientX - r.left + canvasRef.current.scrollLeft,
+        curY: clientY - r.top  + canvasRef.current.scrollTop,
       } : null)
     }
     const up = () => {
       window.removeEventListener('mousemove', move)
       window.removeEventListener('mouseup', up)
-      const toId = hoverPortRef.current
-      if (toId && toId !== step.id) addConnection(step.id, toId)
-      hoverPortRef.current = null
+      window.removeEventListener('touchmove', move)
+      window.removeEventListener('touchend', up)
+
+      const outId = hoverOutPortRef.current
+      if (outId && outId !== step.id) addConnection(outId, step.id)
+      hoverOutPortRef.current = null
       setDragConn(null)
     }
-    window.addEventListener('mousemove', move)
-    window.addEventListener('mouseup', up)
+    window.addEventListener(isTouch ? 'touchmove' : 'mousemove', move, { passive: false })
+    window.addEventListener(isTouch ? 'touchend' : 'mouseup', up)
   }
 
   // ── Bind modal ────────────────────────────────────────────────────
@@ -300,9 +381,15 @@ export default function FlowBuilder({ onRun }) {
 
   // 현재 param 값에 {stepN.field} 템플릿을 삽입 (전체 대체 아닌 추가)
   function applyTemplateInsert(fromExecIdx, key) {
-    if (!bindModal || bindModal.type === 'hconfig') return
+    if (!bindModal) return
     const token = `{step${fromExecIdx + 1}.${key}}`
-    if (bindModal.type === 'header') {
+    
+    if (bindModal.type === 'hconfig') {
+      const hcStep = execOrder[bindModal.stepExecIdx]
+      const entry = hcStep?.headers?.[bindModal.idx]
+      const cur = entry?.binding ? '' : (entry?.val || '')
+      updateHeaderConfigEntry(hcStep.id, bindModal.idx, 'val', cur ? cur + token : token)
+    } else if (bindModal.type === 'header') {
       const step = flowSteps[bindModal.stepArrayIdx]
       const cur = step.reqHeaders?.[bindModal.idx]?.val ?? ''
       updateStepHeader(bindModal.stepArrayIdx, bindModal.idx, 'val', cur ? cur + token : token)
@@ -479,11 +566,16 @@ export default function FlowBuilder({ onRun }) {
                     selected={selectedId === step.id}
                     onClick={e => { e.stopPropagation(); setSelectedId(step.id) }}
                     onRemove={e => { e.stopPropagation(); removeFlowStep(idx); if (selectedId === step.id) setSelectedId(null) }}
-                    onHeaderDown={e => onNodeHeaderDown(e, step)}
+                    onHeaderDown={onNodeHeaderDown}
+                    onTouchStart={onNodeHeaderDown}
                     onPortOutDown={e => onPortOutDown(e, step)}
+                    onPortInDown={e => onPortInDown(e, step)}
                     onPortInEnter={() => { hoverPortRef.current = step.id }}
                     onPortInLeave={() => { if (hoverPortRef.current === step.id) hoverPortRef.current = null }}
+                    onPortOutEnter={() => { hoverOutPortRef.current = step.id }}
+                    onPortOutLeave={() => { if (hoverOutPortRef.current === step.id) hoverOutPortRef.current = null }}
                     draggingConn={!!dragConn && dragConn.fromId !== step.id}
+                    dragConnSide={dragConn?.fromSide}
                   />
                 )
               }
@@ -515,10 +607,15 @@ export default function FlowBuilder({ onRun }) {
                   onClick={e => { e.stopPropagation(); setSelectedId(step.id); setPanelTab('params') }}
                   onRemove={e => { e.stopPropagation(); removeFlowStep(idx); if (selectedId === step.id) setSelectedId(null) }}
                   onHeaderDown={e => onNodeHeaderDown(e, step)}
+                  onTouchStart={e => onNodeHeaderDown(e, step)}
                   onPortOutDown={e => onPortOutDown(e, step)}
+                  onPortInDown={e => onPortInDown(e, step)}
                   onPortInEnter={() => { hoverPortRef.current = step.id }}
                   onPortInLeave={() => { if (hoverPortRef.current === step.id) hoverPortRef.current = null }}
+                  onPortOutEnter={() => { hoverOutPortRef.current = step.id }}
+                  onPortOutLeave={() => { if (hoverOutPortRef.current === step.id) hoverOutPortRef.current = null }}
                   draggingConn={!!dragConn && dragConn.fromId !== step.id}
+                  dragConnSide={dragConn?.fromSide}
                 />
               )
             })}
@@ -603,17 +700,24 @@ export default function FlowBuilder({ onRun }) {
         })()}
       </div>
 
-      {/* ── Bind bottom-sheet ── */}
-      <BottomSheet
+      {/* ── Bind Modal ── */}
+      <Modal
         open={!!bindModal}
         onClose={() => setBindModal(null)}
-        title={bindModal
-          ? bindModal.type === 'hconfig'
-            ? `"${bindStep?.headers?.[bindModal.idx]?.key || ''}" 헤더 값 연결`
-            : bindModal.type === 'header'
-              ? `헤더 "${bindStep?.reqHeaders?.[bindModal.idx]?.key || ''}" 값 연결`
-              : `"${bindStep?.params?.[bindModal.idx]?.key}" 파라미터에 연결`
-          : ''}
+        maxWidth={600}
+        title={(() => {
+          if (!bindModal || !bindStep) return ''
+          if (bindModal.type === 'hconfig') {
+            const h = bindStep.headers?.[bindModal.idx]
+            return `"${h?.key || '비어 있는 헤더'}" 헤더 값 연결`
+          }
+          if (bindModal.type === 'header') {
+            const h = bindStep.reqHeaders?.[bindModal.idx]
+            return `헤더 "${h?.key || '비어 있는 헤더'}" 값 연결`
+          }
+          const p = bindStep.params?.[bindModal.idx]
+          return `"${p?.key || '비어 있는'}" 파라미터에 연결`
+        })()}
       >
         <BindSheet
           apiSteps={bindApiSteps}
@@ -630,7 +734,7 @@ export default function FlowBuilder({ onRun }) {
           onTemplateInsert={applyTemplateInsert}
         />
         <Button style={{ width: '100%', marginTop: 12 }} onClick={() => setBindModal(null)}>취소</Button>
-      </BottomSheet>
+      </Modal>
 
       {/* ── Import modal ── */}
       {importOpen && (
@@ -851,8 +955,8 @@ const IMPORT_PLACEHOLDER = `{
 }`
 
 // ── Header Config Canvas Node ──────────────────────────────────────
-function HeaderConfigNode({ step, stepNum, selected, onClick, onRemove, onHeaderDown,
-  onPortOutDown, onPortInEnter, onPortInLeave, draggingConn }) {
+function HeaderConfigNode({ step, stepNum, selected, onClick, onRemove, onHeaderDown, onTouchStart,
+  onPortOutDown, onPortInDown, onPortInEnter, onPortInLeave, onPortOutEnter, onPortOutLeave, draggingConn, dragConnSide }) {
   const entries = (step.headers || []).filter(h => h.key)
   return (
     <div
@@ -861,11 +965,16 @@ function HeaderConfigNode({ step, stepNum, selected, onClick, onRemove, onHeader
       onClick={onClick}
     >
       <div
-        className={[styles.port_in, draggingConn ? styles.port_in_droppable : ''].join(' ')}
+        className={[styles.port_in, (draggingConn && dragConnSide === 'out') ? styles.port_in_droppable : ''].join(' ')}
+        onMouseDown={onPortInDown}
         onMouseEnter={onPortInEnter}
         onMouseLeave={onPortInLeave}
       />
-      <div className={styles.node_head + ' ' + styles.hc_head} onMouseDown={onHeaderDown}>
+      <div
+        className={[styles.node_head, styles.hc_head].join(' ')}
+        onMouseDown={onHeaderDown}
+        onTouchStart={onTouchStart}
+      >
         <ConfigIcon />
         <span className={styles.node_title}>헤더 설정</span>
         <span className={styles.node_step}>#{stepNum}</span>
@@ -884,12 +993,16 @@ function HeaderConfigNode({ step, stepNum, selected, onClick, onRemove, onHeader
         {entries.length > 4 && <span className={styles.hc_more}>+{entries.length - 4}개 더</span>}
       </div>
       <div className={styles.node_ports}>
-        <div className={styles.port_send}><WaveIcon /> Pass-through</div>
+        <div className={styles.port_send}><WaveIcon /> Output</div>
         <div className={styles.port_outputs}>
-          <div className={styles.port_ok}>
+          <div
+            className={[styles.port_ok, (draggingConn && dragConnSide === 'in') ? styles.port_out_droppable : ''].join(' ')}
+            onMouseEnter={onPortOutEnter}
+            onMouseLeave={onPortOutLeave}
+          >
             Output
             <span
-              className={styles.dot_ok}
+              className={[styles.dot_ok, (draggingConn && dragConnSide === 'in') ? styles.dot_ok_droppable : ''].join(' ')}
               onMouseDown={onPortOutDown}
             />
           </div>
@@ -969,25 +1082,65 @@ function HeaderConfigPanel({ step, idx, execPos, flowSteps, modules = [], getApi
         <div className={styles.table_head}>
           <span>Key</span><span>Value</span>
         </div>
-        {entries.map((h, i) => (
-          <div key={i} className={styles.hrow}>
-            <input className={styles.hkey} value={h.key} placeholder="Key"
-              onChange={e => onUpdateEntry(i, 'key', e.target.value)} />
-            <input
-              className={[styles.pval, h.binding ? styles.pval_bound : !h.val && h.hint ? styles.pval_hint : ''].join(' ')}
-              value={h.binding || h.val}
-              placeholder={h.hint ? `${h.hint} <토큰 입력 또는 연결>` : 'Value'}
-              onChange={e => onUpdateEntry(i, 'val', e.target.value)}
-            />
-            {h.hint && !h.val && !h.binding && <span className={styles.hc_auto_badge}>자동감지</span>}
-            <button className={[styles.pbind, (h.binding || h.val?.includes('{step')) ? styles.pbind_on : ''].join(' ')}
-              onClick={() => onBind(i)}>
-              {(h.binding || h.val?.includes('{step')) ? '연결됨' : '연결'}
-            </button>
-            {h.binding && <button className={styles.pbind_clear} onClick={() => onUpdateEntry(i, 'val', '')} title="연결 해제">×</button>}
-            <button className={styles.hremove} onClick={() => onRemoveEntry(i)}>×</button>
-          </div>
-        ))}
+        {entries.map((h, i) => {
+          const isBearerScheme = h.schemeType === 'http bearer' || h.hint === 'Bearer'
+          const needsBearer = isBearerScheme && h.val && !h.val.startsWith('Bearer ') && !h.binding
+          const isJWTInWrongKey = h.val?.startsWith('ey') && h.key !== 'Authorization'
+          
+          // JWT Validation Logic
+          const tokenBody = h.val?.replace(/^Bearer\s+/i, '') || ''
+          const isDuplicatedJWT = (tokenBody.match(/eyJ/g) || []).length > 1
+          const dotCount = (tokenBody.match(/\./g) || []).length
+          const isInvalidJWTStructure = tokenBody.startsWith('ey') && dotCount !== 2 && !isDuplicatedJWT
+
+          return (
+            <div key={i} className={styles.hrow}>
+              <HeaderKeyInput
+                value={h.key}
+                onChange={v => onUpdateEntry(i, 'key', v)}
+                warning={isJWTInWrongKey ? 'JWT는 보통 Authorization 헤더에 사용합니다' : null}
+              />
+              <div style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <input
+                  className={[styles.pval, h.binding ? styles.pval_bound : !h.val && h.hint ? styles.pval_hint : ''].join(' ')}
+                  value={h.binding || h.val}
+                  placeholder={h.hint ? `${h.hint} <토큰 입력 또는 연결>` : 'Value'}
+                  onChange={e => onUpdateEntry(i, 'val', e.target.value)}
+                  style={{ width: '100%' }}
+                />
+                
+                {needsBearer && (
+                  <button 
+                    className={styles.auth_guide_btn} 
+                    title="Bearer 접두어 추가"
+                    onClick={() => onUpdateEntry(i, 'val', 'Bearer ' + h.val)}
+                  >
+                    <AlertIcon />
+                  </button>
+                )}
+
+                {isDuplicatedJWT && (
+                  <div className={styles.auth_warn_tooltip} style={{ background: 'var(--red-bg)', borderColor: 'var(--red-border)', color: 'var(--red)' }}>
+                    토큰이 중복 입력된 것 같습니다 (eyJ 패턴 반복)
+                  </div>
+                )}
+                {isInvalidJWTStructure && (
+                  <div className={styles.auth_warn_tooltip}>
+                    JWT 형식이 올바르지 않습니다 (구분자 '.' 부족/과다)
+                  </div>
+                )}
+              </div>
+
+              {h.hint && !h.val && !h.binding && <span className={styles.hc_auto_badge}>자동감지</span>}
+              <button className={[styles.pbind, (h.binding || h.val?.includes('{step')) ? styles.pbind_on : ''].join(' ')}
+                onClick={() => onBind(i)}>
+                {(h.binding || h.val?.includes('{step')) ? '연결됨' : '연결'}
+              </button>
+              {h.binding && <button className={styles.pbind_clear} onClick={() => onUpdateEntry(i, 'val', '')} title="연결 해제">×</button>}
+              <button className={styles.hremove} onClick={() => onRemoveEntry(i)}>×</button>
+            </div>
+          )
+        })}
         <button className={styles.hadd} onClick={onAddEntry}>+ 헤더 추가</button>
       </div>
     </div>
@@ -1006,8 +1159,8 @@ function schemeTypeLabel(type) {
 }
 
 // ── Canvas Node ────────────────────────────────────────────────────
-function CanvasNode({ step, stepNum, api, mod, selected, onClick, onRemove, onHeaderDown,
-  onPortOutDown, onPortInEnter, onPortInLeave, draggingConn }) {
+function CanvasNode({ step, stepNum, api, mod, selected, onClick, onRemove, onHeaderDown, onTouchStart,
+  onPortOutDown, onPortInDown, onPortInEnter, onPortInLeave, onPortOutEnter, onPortOutLeave, draggingConn, dragConnSide }) {
   return (
     <div
       className={[styles.node, selected ? styles.node_sel : ''].join(' ')}
@@ -1016,13 +1169,14 @@ function CanvasNode({ step, stepNum, api, mod, selected, onClick, onRemove, onHe
     >
       {/* Input port (left) */}
       <div
-        className={[styles.port_in, draggingConn ? styles.port_in_droppable : ''].join(' ')}
+        className={[styles.port_in, (draggingConn && dragConnSide === 'out') ? styles.port_in_droppable : ''].join(' ')}
+        onMouseDown={onPortInDown}
         onMouseEnter={onPortInEnter}
         onMouseLeave={onPortInLeave}
       />
 
       {/* Header — drag handle */}
-      <div className={styles.node_head} onMouseDown={onHeaderDown}>
+      <div className={styles.node_head} onMouseDown={onHeaderDown} onTouchStart={onTouchStart}>
         <HttpIcon />
         <span className={styles.node_title}>{api.name}</span>
         <span className={styles.node_step}>#{stepNum}</span>
@@ -1043,10 +1197,14 @@ function CanvasNode({ step, stepNum, api, mod, selected, onClick, onRemove, onHe
           <WaveIcon /> Send
         </div>
         <div className={styles.port_outputs}>
-          <div className={styles.port_ok}>
+          <div
+            className={[styles.port_ok, (draggingConn && dragConnSide === 'in') ? styles.port_out_droppable : ''].join(' ')}
+            onMouseEnter={onPortOutEnter}
+            onMouseLeave={onPortOutLeave}
+          >
             Success
             <span
-              className={styles.dot_ok}
+              className={[styles.dot_ok, (draggingConn && dragConnSide === 'in') ? styles.dot_ok_droppable : ''].join(' ')}
               onMouseDown={onPortOutDown}
             />
           </div>
@@ -1057,6 +1215,53 @@ function CanvasNode({ step, stepNum, api, mod, selected, onClick, onRemove, onHe
       </div>
     </div>
   )
+}
+
+// ── Header UI Helpers ────────────────────────────────────────────────
+const COMMON_HEADERS = [
+  { key: 'Authorization', label: 'Auth' },
+  { key: 'Content-Type', label: 'Type' },
+  { key: 'Accept', label: 'Accept' },
+  { key: 'X-Access-Token', label: 'Token' },
+  { key: 'Cookie', label: 'Cookie' },
+]
+
+function HeaderKeyInput({ value, onChange, warning }) {
+  const [open, setOpen] = useState(false)
+  
+  return (
+    <div className={styles.hkey_wrap}>
+      <input 
+        className={styles.hkey} 
+        value={value} 
+        placeholder="Key"
+        onChange={e => onChange(e.target.value)}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 200)}
+      />
+      
+      {open && (
+        <div className={styles.hkey_suggest}>
+          {COMMON_HEADERS.map(h => (
+            <button key={h.key} className={styles.hkey_suggest_item} onClick={() => onChange(h.key)}>
+              <span>{h.key}</span>
+              <span className={styles.hkey_suggest_label}>{h.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      
+      {warning && (
+        <div className={styles.auth_warn_tooltip}>
+          {warning}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function AlertIcon() {
+  return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
 }
 
 // ── Side Panel ─────────────────────────────────────────────────────

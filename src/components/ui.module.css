@@ -80,7 +80,31 @@
 @keyframes slideUp { from { transform: translateY(12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 @keyframes slideUpSheet { from { transform: translateY(20px); } to { transform: translateY(0); } }
 
-.modal_title { font-size: 15px; font-weight: 500; margin-bottom: 20px; }
+.modal_head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  gap: 12px;
+}
+.modal_title { font-size: 15px; font-weight: 500; margin: 0; }
+.modal_close {
+  background: none;
+  border: none;
+  font-size: 22px;
+  color: var(--text3);
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  transition: color 0.1s;
+  flex-shrink: 0;
+}
+.modal_close:hover { color: var(--text2); }
+
+.modal_body {
+  max-height: 70vh;
+  overflow-y: auto;
+}
 
 .form_group { margin-bottom: 16px; }
 .form_label { font-size: 12px; color: var(--text3); margin-bottom: 6px; display: block; font-family: var(--font-mono); }

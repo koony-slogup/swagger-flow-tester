@@ -116,17 +116,33 @@ export default function RunPage({ onGoToFlow }) {
         ;(prev.headers || []).forEach(h => {
           if (!h.key) return
           if (step.excludedHeaders?.includes(h.key)) return
-          const val = h.binding
+          let val = h.binding
             ? (resolveBinding(h.binding) ?? h.val)
             : resolveTemplate(h.val, resolveBinding)
+          
+          // Auto-fix: Ensure Bearer prefix for Authorization header if it's a bearer scheme
+          if (val && h.key === 'Authorization' && (h.schemeType === 'http bearer' || h.hint === 'Bearer')) {
+            if (!val.toLowerCase().startsWith('bearer ')) {
+              val = 'Bearer ' + val
+            }
+          }
+
           if (val) requestHeaders[h.key] = val
         })
       }
       ;(step.reqHeaders || []).forEach(h => {
         if (!h.key) return
-        const val = h.binding
+        let val = h.binding
           ? (resolveBinding(h.binding) ?? h.val)
           : resolveTemplate(h.val, resolveBinding)
+
+        // Auto-fix: Ensure Bearer prefix for Authorization header if it's a bearer scheme
+        if (val && h.key === 'Authorization' && (h.schemeType === 'http bearer' || h.hint === 'Bearer')) {
+          if (!val.toLowerCase().startsWith('bearer ')) {
+            val = 'Bearer ' + val
+          }
+        }
+
         if (val) requestHeaders[h.key] = val
       })
 

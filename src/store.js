@@ -68,14 +68,52 @@ function sbDeleteCollection(id) {
 
 // ── Swagger fetching ──────────────────────────────────────────────────────────
 async function fetchSwaggerApis(baseUrl, moduleId) {
-  const candidates = ['/v3/api-docs', '/v2/api-docs', '/api-docs', '/swagger.json']
+  let cleanBase = baseUrl.trim().replace(/\/$/, '')
+  
+  // 사용자가 실수로 Swagger UI 주소까지 입력한 경우 자동으로 잘라냄
+  // 예: http://localhost:3000/api-docs -> http://localhost:3000
+  const swaggerUiPaths = ['/api-docs', '/swagger-ui', '/swagger-ui.html', '/swagger']
+  for (const p of swaggerUiPaths) {
+    if (cleanBase.toLowerCase().endsWith(p)) {
+      cleanBase = cleanBase.slice(0, -p.length)
+      break
+    }
+  }
+
+  const candidates = ['/v3/api-docs', '/api-docs-json', '/v2/api-docs', '/api-docs', '/swagger.json']
+  
   for (const path of candidates) {
+    const url = cleanBase + path
     try {
-      const res = await fetch(baseUrl.replace(/\/$/, '') + path)
-      if (!res.ok) continue
+      console.log(`[Swagger] Fetching: ${url}`)
+      const res = await fetch(url)
+      
+      if (!res.ok) {
+        console.warn(`[Swagger] ${url} -> status ${res.status}`)
+        continue
+      }
+      
+      const ct = (res.headers.get('content-type') || '').toLowerCase()
+      // HTML일 경우(UI 페이지인 경우) 건너뜀
+      if (ct.includes('text/html')) {
+        console.warn(`[Swagger] ${url} returned HTML. Skipping...`)
+        continue
+      }
+
       const data = await res.json()
-      return parseSwagger(data, moduleId)
-    } catch {}
+      // JSON 형식이지만 Swagger 데이터가 아닌 경우 (데이터 안에 paths나 openapi/swagger 필드가 있어야 함)
+      if (!data.paths && !data.swagger && !data.openapi) {
+        console.warn(`[Swagger] ${url} returned JSON but not a valid Swagger spec.`)
+        continue
+      }
+
+      console.log(`[Swagger] Successfully loaded from ${url}`)
+      const parsed = parseSwagger(data, moduleId)
+      return { ...parsed, cleanBase }
+    } catch (err) {
+      // CORS 오류인 경우 여기서 잡힘
+      console.error(`[Swagger] Error fetching from ${url}:`, err.message)
+    }
   }
   return null
 }
@@ -311,6 +349,8 @@ function parseSwagger(data, moduleId = '') {
         id: stableApiId(moduleId, method, path),
         method: method.toUpperCase(), path,
         name: op.summary || op.operationId || path,
+        tags: op.tags || [],
+        summary: op.summary || '',
         params,
         response: extractResponseFields(op, data),
         requestExample: extractRequestExample(op, data),
@@ -318,7 +358,13 @@ function parseSwagger(data, moduleId = '') {
       })
     }
   }
-  return { apis, detectedAuths: parseSwaggerSecuritySchemes(data) }
+  const tagMeta = {}
+  if (data.tags && Array.isArray(data.tags)) {
+    data.tags.forEach(t => {
+      if (t.name) tagMeta[t.name] = t.description || ''
+    })
+  }
+  return { apis, detectedAuths: parseSwaggerSecuritySchemes(data), tagMeta }
 }
 
 // ── Store ─────────────────────────────────────────────────────────────────────
@@ -329,6 +375,10 @@ export const useStore = create(
       // ── Collections ───────────────────────────────────────────────────────
       collections: [],
       activeCollectionId: null,
+
+      // ── Theme ────────────────────────────────────────────────────────────
+      theme: 'beige', // 'dark' | 'beige'
+      setTheme: (t) => set({ theme: t }),
 
       addCollection: async (name) => {
         const id = 'col_' + Date.now()
@@ -462,7 +512,14 @@ export const useStore = create(
             const ok = result !== null
             const existingAuths = m.auths || []
             const auths = ok && existingAuths.length === 0 ? (result.detectedAuths || []) : existingAuths
-            return { ...m, apis: result?.apis ?? [], status: ok ? 'ok' : 'error', auths }
+            return {
+              ...m,
+              url: result?.cleanBase || m.url, // 자동 정리된 URL 반영
+              apis: result?.apis ?? [],
+              tagMeta: result?.tagMeta ?? {},
+              status: ok ? 'ok' : 'error',
+              auths
+            }
           })
         }))
         sbUpsertModule(get().modules.find(m => m.id === id), activeCollectionId)
@@ -470,6 +527,10 @@ export const useStore = create(
       removeModule: (id) => {
         set(s => ({ modules: s.modules.filter(m => m.id !== id) }))
         sbDeleteModule(id)
+      },
+      updateModule: (id, patch) => {
+        set(s => ({ modules: s.modules.map(m => m.id === id ? { ...m, ...patch } : m) }))
+        sbUpsertModule(get().modules.find(m => m.id === id), get().activeCollectionId)
       },
       renameModule: (id, name) => {
         set(s => ({ modules: s.modules.map(m => m.id === id ? { ...m, name } : m) }))
@@ -497,7 +558,14 @@ export const useStore = create(
               })
               newAuths = [...newAuths, ...toAdd]
             }
-            return { ...m, apis: result?.apis ?? m.apis, status: ok ? 'ok' : 'error', auths: newAuths }
+            return {
+              ...m,
+              url: result?.cleanBase || m.url, // 자동 정리된 URL 반영
+              apis: result?.apis ?? m.apis,
+              tagMeta: result?.tagMeta ?? {},
+              status: ok ? 'ok' : 'error',
+              auths: newAuths
+            }
           })
         }))
 
@@ -604,6 +672,7 @@ export const useStore = create(
             id: 's' + Date.now(), mid, aid,
             params: api.params.map(p => ({ key: p.key, val: '', binding: null })),
             reqHeaders: [], bodyMode: 'params', bodyRaw: '', x, y, excludedHeaders: [],
+            createdAt: Date.now(),
           }]
         }))
       },
@@ -614,6 +683,7 @@ export const useStore = create(
             id: 's' + Date.now(),
             x: (snapshot.x ?? 80) + offsetX,
             y: (snapshot.y ?? 80) + offsetY,
+            createdAt: Date.now(),
           }]
         }))
       },
@@ -633,7 +703,7 @@ export const useStore = create(
         }
         if (headers.length === 0) headers.push({ key: '', val: '', binding: null })
         set(s => ({
-          flowSteps: [...s.flowSteps, { id: 's' + Date.now(), type: 'header-config', x, y, headers }]
+          flowSteps: [...s.flowSteps, { id: 's' + Date.now(), type: 'header-config', x, y, headers, createdAt: Date.now() }]
         }))
       },
       addHeaderConfigEntry: (stepId) => set(s => ({
@@ -996,6 +1066,7 @@ export const useStore = create(
         modules: s.modules, savedFlows: s.savedFlows,
         flowSteps: s.flowSteps, flowName: s.flowName, connections: s.connections,
         envs: s.envs, activeEnvId: s.activeEnvId, apiPresets: s.apiPresets, lastUsedPresetId: s.lastUsedPresetId,
+        theme: s.theme,
       }),
     }
   )

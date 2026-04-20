@@ -1,6 +1,13 @@
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500&display=swap');
 
 :root {
+  /* Common variables */
+  --radius: 8px;
+  --radius-lg: 12px;
+  --font-sans: 'IBM Plex Sans KR', sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+
+  /* Default / Dark Theme */
   --bg: #0f0f11;
   --bg2: #17171a;
   --bg3: #1e1e23;
@@ -25,10 +32,35 @@
   --blue: #60a5fa;
   --blue-bg: #0d1520;
   --blue-border: #1a3555;
-  --radius: 8px;
-  --radius-lg: 12px;
-  --font-sans: 'IBM Plex Sans KR', sans-serif;
-  --font-mono: 'IBM Plex Mono', monospace;
+  --shadow: 0 4px 12px rgba(0,0,0,0.5);
+}
+
+[data-theme='beige'] {
+  --bg: #e8e2d4;
+  --bg2: #dfd7c5;
+  --bg3: #d6ccb6;
+  --bg4: #c8bc9f;
+  --border: #bfb294;
+  --border2: #b0a383;
+  --text: #2f2a24;
+  --text2: #524b41;
+  --text3: #7a7062;
+  --purple: #5c50c7;
+  --purple2: #7c6cf8;
+  --purple-bg: #eceaf9;
+  --purple-border: #cecaef;
+  --green: #15803d;
+  --green-bg: #ecfdf5;
+  --green-border: #99f6e4;
+  --red: #b91c1c;
+  --red-bg: #fef2f2;
+  --red-border: #fca5a5;
+  --amber: #b45309;
+  --amber-bg: #fffbeb;
+  --blue: #1d4ed8;
+  --blue-bg: #eff6ff;
+  --blue-border: #bfdbfe;
+  --shadow: 0 4px 12px rgba(47, 42, 36, 0.12);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -43,6 +75,7 @@ body {
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--bg4); border-radius: 4px; }
+[data-theme='beige'] ::-webkit-scrollbar-thumb { background: var(--border); }
 ::-webkit-scrollbar-thumb:hover { background: var(--border2); }
 
 input, button, textarea {

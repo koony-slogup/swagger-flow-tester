@@ -39,7 +39,12 @@ export default function App() {
   const [saveName, setSaveName] = useState('')
 
   const { flowSteps, flowName, setFlowName, savedFlows, saveFlow, loadFlow, clearFlow, envs, activeEnvId, supaStatus, hydrateFromSupabase,
-    collections, activeCollectionId, addCollection, deleteCollection, renameCollection, switchCollection } = useStore()
+    collections, activeCollectionId, addCollection, deleteCollection, renameCollection, switchCollection,
+    theme, setTheme } = useStore()
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+  }, [theme])
 
   const [collectionOpen, setCollectionOpen] = useState(false)
   const [renamingId, setRenamingId] = useState(null)
@@ -206,6 +211,16 @@ export default function App() {
             </button>
           )}
 
+          <div className={styles.nav_divider} />
+
+          <button className={styles.theme_toggle} onClick={() => setTheme(theme === 'dark' ? 'beige' : 'dark')}>
+            {theme === 'dark' ? <MoonIcon /> : <SunIcon />}
+            <span>{theme === 'dark' ? '다크 모드' : '베이지 모드'}</span>
+            <div className={styles.theme_switch}>
+              <div className={styles.theme_knob} data-active={theme === 'beige'} />
+            </div>
+          </button>
+
           <div className={styles.supa_status} data-status={supaStatus}>
             <CloudIcon status={supaStatus} />
             <span>{supaStatus === 'loading' ? '동기화 중...' : supaStatus === 'error' ? 'Supabase 오류' : supaStatus === 'ok' ? 'Supabase 연결됨' : 'Supabase'}</span>
@@ -326,4 +341,12 @@ function ChevronIcon({ open }) {
 function CloudIcon({ status }) {
   const color = status === 'ok' ? 'var(--green)' : status === 'error' ? 'var(--red)' : 'var(--text3)'
   return <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>
+}
+
+function SunIcon() {
+  return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+}
+
+function MoonIcon() {
+  return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
 }

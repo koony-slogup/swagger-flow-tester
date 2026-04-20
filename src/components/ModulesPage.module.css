@@ -65,17 +65,104 @@
 
 .card_url { font-size: 11px; color: var(--text3); font-family: var(--font-mono); margin-bottom: 12px; }
 
-.api_list { display: flex; flex-direction: column; gap: 4px; }
+.api_list { display: flex; flex-direction: column; gap: 6px; }
+.api_group {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.api_group[data-expanded="true"] {
+  border-color: var(--border2);
+}
+
+.group_header {
+  padding: 8px 12px;
+  background: var(--bg3);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.12s;
+}
+.group_header:hover { background: var(--bg4); }
+
+.group_chevron {
+  font-size: 9px;
+  width: 10px;
+  color: var(--text3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.group_tag {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  font-family: var(--font-sans);
+}
+
+.group_desc {
+  font-size: 11px;
+  color: var(--text3);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.group_count {
+  font-size: 10px;
+  padding: 1px 6px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text3);
+  font-family: var(--font-mono);
+}
+
+.group_body {
+  padding: 6px;
+  background: var(--bg2);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .api_row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 5px 8px;
+  gap: 10px;
+  padding: 6px 10px;
   background: var(--bg3);
   border-radius: var(--radius);
   min-width: 0;
+  border: 1px solid transparent;
 }
-.api_path { font-size: 12px; color: var(--text2); font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
+.api_row:hover { border-color: var(--border); }
+
+.api_path {
+  font-size: 11px;
+  color: var(--text2);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  font-weight: 500;
+}
+.api_name {
+  font-size: 11px;
+  color: var(--text3);
+  font-family: var(--font-sans);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 120px;
+  text-align: right;
+  margin-left: auto;
+}
 .api_empty { font-size: 12px; color: var(--text3); padding: 6px 8px; font-family: var(--font-mono); }
 
 .auth_section {

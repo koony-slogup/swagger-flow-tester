@@ -138,10 +138,10 @@
   top: 0; left: 0;
   width: 100%; height: 100%;
   overflow: visible;
-  /* pointer-events managed per-element */
+  pointer-events: none; /* Let clicks pass through to nodes */
 }
 /* Connection lines — click to delete, hover turns red */
-.conn_group { cursor: pointer; }
+.conn_group { cursor: pointer; pointer-events: auto; }
 .conn_group path { transition: stroke 0.12s, stroke-opacity 0.12s; }
 .conn_group:hover path:not([stroke="transparent"]) {
   stroke: var(--red) !important;
@@ -184,8 +184,14 @@
   background: var(--bg2);
   border: 2px solid var(--border2);
   box-shadow: 0 0 0 2px var(--bg2);
-  z-index: 2;
-  transition: border-color 0.12s, box-shadow 0.12s;
+  z-index: 10;
+  transition: all 0.12s;
+}
+/* Hit area expansion */
+.port_in::after {
+  content: "";
+  position: absolute;
+  top: -10px; left: -10px; right: -10px; bottom: -10px;
 }
 .node_sel .port_in { border-color: var(--purple); }
 /* Highlighted when a connection drag is in progress */
@@ -193,6 +199,16 @@
 .port_in_droppable:hover {
   border-color: var(--green) !important;
   box-shadow: 0 0 0 3px rgba(74,222,128,0.3), 0 0 0 2px var(--bg2) !important;
+}
+
+/* For backward drag: Output port as drop target */
+.port_out_droppable:hover .dot_ok {
+  transform: scale(1.4);
+  box-shadow: 0 0 0 4px rgba(74,222,128,0.3);
+  background: var(--green) !important;
+}
+.dot_ok_droppable {
+  cursor: crosshair !important;
 }
 
 /* Node header — drag handle */
@@ -266,6 +282,13 @@
 .dot_ok, .dot_err {
   width: 12px; height: 12px; border-radius: 50%; display: inline-block; flex-shrink: 0;
   transition: transform 0.12s, box-shadow 0.12s;
+  position: relative;
+}
+/* Hit area expansion */
+.dot_ok::after, .dot_err::after {
+  content: "";
+  position: absolute;
+  top: -12px; left: -12px; right: -12px; bottom: -12px;
 }
 .dot_ok  {
   background: var(--green);
@@ -1127,3 +1150,4 @@
   cursor: pointer; transition: all 0.12s;
 }
 .ifs_add_step:hover { border-color: var(--purple-border); color: var(--purple2); background: var(--bg3); }
+@keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } } .hkey_wrap { position: relative; width: 100px; flex-shrink: 0; } .hkey_suggest { position: absolute; top: calc(100% + 4px); left: 0; width: 180px; background: var(--bg2); border: 1px solid var(--border2); border-radius: var(--radius); box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 100; overflow: hidden; } .hkey_suggest_item { width: 100%; border: none; background: none; padding: 6px 10px; text-align: left; font-size: 11px; font-family: var(--font-mono); color: var(--text); cursor: pointer; display: flex; align-items: center; justify-content: space-between; } .hkey_suggest_item:hover { background: var(--hover); } .hkey_suggest_label { color: var(--text3); font-size: 10px; font-family: var(--font-sans); } .auth_guide_btn { background: none; border: none; padding: 0 4px; cursor: pointer; display: flex; align-items: center; color: var(--orange); animation: pulse 2s infinite; } .auth_guide_btn:hover { transform: scale(1.1); color: var(--green); animation: none; } .auth_warn_tooltip { position: absolute; top: -30px; left: 0; background: var(--bg3); border: 1px solid var(--orange-border); color: var(--orange); font-size: 10px; padding: 4px 8px; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); white-space: nowrap; z-index: 50; }

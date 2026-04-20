@@ -1,11 +1,11 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useStore } from '../store'
 import { Button, Modal, FormGroup, Input } from './ui'
 import { MethodBadge } from './ui'
 import styles from './ModulesPage.module.css'
 
 export default function ModulesPage() {
-  const { modules, addModule, removeModule, renameModule, refreshModule } = useStore()
+  const { modules, addModule, removeModule, updateModule, refreshModule } = useStore()
   const { addModuleAuth, removeModuleAuth, updateModuleAuth } = useStore()
 
   const [addOpen, setAddOpen]     = useState(false)
@@ -13,9 +13,10 @@ export default function ModulesPage() {
   const [url, setUrl]             = useState('')
   const [adding, setAdding]       = useState(false)
 
-  // Rename modal state
-  const [renameTarget, setRenameTarget] = useState(null) // { id, name }
-  const [renameName, setRenameName]     = useState('')
+  // Edit modal state
+  const [editTarget, setEditTarget] = useState(null) // { id, name, url }
+  const [editName, setEditName]     = useState('')
+  const [editUrl, setEditUrl]       = useState('')
 
   // Delete confirm state
   const [deleteTarget, setDeleteTarget] = useState(null) // { id, name }
@@ -28,15 +29,16 @@ export default function ModulesPage() {
     setName(''); setUrl(''); setAddOpen(false)
   }
 
-  function openRename(mod) {
-    setRenameTarget(mod)
-    setRenameName(mod.name)
+  function openEdit(mod) {
+    setEditTarget(mod)
+    setEditName(mod.name)
+    setEditUrl(mod.url)
   }
 
-  function confirmRename() {
-    if (!renameName.trim()) return
-    renameModule(renameTarget.id, renameName.trim())
-    setRenameTarget(null)
+  function confirmEdit() {
+    if (!editName.trim() || !editUrl.trim()) return
+    updateModule(editTarget.id, { name: editName.trim(), url: editUrl.trim() })
+    setEditTarget(null)
   }
 
   function confirmDelete() {
@@ -63,7 +65,7 @@ export default function ModulesPage() {
               key={mod.id}
               mod={mod}
               onRefresh={() => refreshModule(mod.id)}
-              onRename={() => openRename(mod)}
+              onEdit={() => openEdit(mod)}
               onDelete={() => setDeleteTarget(mod)}
               onAddAuth={() => addModuleAuth(mod.id)}
               onRemoveAuth={(idx) => removeModuleAuth(mod.id, idx)}
@@ -96,16 +98,20 @@ export default function ModulesPage() {
         </div>
       </Modal>
 
-      {/* 이름 변경 모달 */}
-      <Modal open={!!renameTarget} onClose={() => setRenameTarget(null)} title="모듈 이름 변경">
-        <FormGroup label="새 이름">
-          <Input value={renameName} onChange={e => setRenameName(e.target.value)}
-            autoFocus onKeyDown={e => e.key === 'Enter' && confirmRename()} />
+      {/* 모듈 수정 모달 */}
+      <Modal open={!!editTarget} onClose={() => setEditTarget(null)} title="모듈 정보 수정">
+        <FormGroup label="이름">
+          <Input value={editName} onChange={e => setEditName(e.target.value)}
+            autoFocus />
+        </FormGroup>
+        <FormGroup label="Swagger Base URL">
+          <Input value={editUrl} onChange={e => setEditUrl(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && confirmEdit()} />
         </FormGroup>
         <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
-          <Button style={{ flex: 1 }} onClick={() => setRenameTarget(null)}>취소</Button>
-          <Button variant="primary" style={{ flex: 1 }} onClick={confirmRename}
-            disabled={!renameName.trim()}>변경</Button>
+          <Button style={{ flex: 1 }} onClick={() => setEditTarget(null)}>취소</Button>
+          <Button variant="primary" style={{ flex: 1 }} onClick={confirmEdit}
+            disabled={!editName.trim() || !editUrl.trim()}>변경</Button>
         </div>
       </Modal>
 
@@ -126,7 +132,7 @@ export default function ModulesPage() {
   )
 }
 
-function ModuleCard({ mod, onRefresh, onRename, onDelete, onAddAuth, onRemoveAuth, onUpdateAuth }) {
+function ModuleCard({ mod, onRefresh, onEdit, onDelete, onAddAuth, onRemoveAuth, onUpdateAuth }) {
   const [authOpen, setAuthOpen]   = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const auths = mod.auths || []
@@ -136,6 +142,19 @@ function ModuleCard({ mod, onRefresh, onRename, onDelete, onAddAuth, onRemoveAut
     await onRefresh()
     setRefreshing(false)
   }
+
+  const groupedApis = useMemo(() => {
+    const groups = {}
+    mod.apis.forEach(api => {
+      const tag = api.tags?.[0] || 'default'
+      if (!groups[tag]) groups[tag] = []
+      groups[tag].push(api)
+    })
+    return groups
+  }, [mod.apis])
+
+  const [expandedGroups, setExpandedGroups] = useState({}) // { [tag]: boolean }
+  const toggleGroup = (tag) => setExpandedGroups(prev => ({ ...prev, [tag]: !prev[tag] }))
 
   return (
     <div className={styles.card}>
@@ -153,7 +172,7 @@ function ModuleCard({ mod, onRefresh, onRename, onDelete, onAddAuth, onRemoveAut
             title="Swagger 재로드 및 인증 재감지">
             <RefreshIcon spinning={refreshing || mod.status === 'loading'} />
           </button>
-          <button className={styles.icon_btn} onClick={onRename} title="이름 변경">
+          <button className={styles.icon_btn} onClick={onEdit} title="정보 수정">
             <EditIcon />
           </button>
           <button className={[styles.icon_btn, styles.icon_btn_danger].join(' ')} onClick={onDelete} title="모듈 삭제">
@@ -196,12 +215,31 @@ function ModuleCard({ mod, onRefresh, onRename, onDelete, onAddAuth, onRemoveAut
       </div>
 
       <div className={styles.api_list}>
-        {mod.apis.map(api => (
-          <div key={api.id} className={styles.api_row}>
-            <MethodBadge method={api.method} />
-            <span className={styles.api_path}>{api.path}</span>
-          </div>
-        ))}
+        {Object.entries(groupedApis).map(([tag, list]) => {
+          const isExpanded = !!expandedGroups[tag]
+          const desc = mod.tagMeta?.[tag]
+          return (
+            <div key={tag} className={styles.api_group} data-expanded={isExpanded}>
+              <div className={styles.group_header} onClick={() => toggleGroup(tag)}>
+                <span className={styles.group_chevron}>{isExpanded ? '▼' : '▶'}</span>
+                <span className={styles.group_tag}>{tag}</span>
+                {desc && <span className={styles.group_desc}>{desc}</span>}
+                <span className={styles.group_count}>{list.length}</span>
+              </div>
+              {isExpanded && (
+                <div className={styles.group_body}>
+                  {list.map(api => (
+                    <div key={api.id} className={styles.api_row}>
+                      <MethodBadge method={api.method} />
+                      <span className={styles.api_path}>{api.path}</span>
+                      <span className={styles.api_name}>{api.name}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        })}
         {mod.apis.length === 0 && <div className={styles.api_empty}>등록된 API 없음</div>}
       </div>
     </div>
